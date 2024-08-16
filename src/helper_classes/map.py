@@ -1,5 +1,5 @@
 import shapely
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon, Point, LineString
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as MplPolygon
 from matplotlib.patches import CirclePolygon as MplCirclePolygon
@@ -144,7 +144,7 @@ class RoadGraph():
         self.road_map = road_map
         self.vertices = []
         self.kdtree = None
-        self.road_graph = None
+        self.road_graph: nx.Graph = None
 
     def _create_graph(self, points: list, min_length: float, max_length: float) -> nx.Graph:
         """
@@ -162,14 +162,20 @@ class RoadGraph():
         for idx, point in enumerate(points):
             indices = self.kdtree.query_ball_point(point, max_length)
             for neighbour_idx in indices:
-                if neighbour_idx != idx:  # avoid calling itself
-                    dist = np.linalg.norm(
-                        np.array(point) - np.array(points[neighbour_idx]))
-                    if min_length <= dist <= max_length:
-                        # TODO: decide on weights
-                        self.road_graph.add_edge(
-                            idx, neighbour_idx, weight=dist)
-        # TODO: remove edges that collide with walls
+                if neighbour_idx == idx:  
+                    # avoid calling itself
+                    continue
+                dist = np.linalg.norm(
+                    np.array(point) - np.array(points[neighbour_idx]))
+                if not min_length <= dist <= max_length:
+                    # outside allowable lengths
+                    continue
+                candidate_edge = LineString([points[neighbour_idx], point])
+                if not candidate_edge.within(self.road_map.map):
+                    # motion path is disallowed
+                    continue                
+                # TODO: decide on weights
+                self.road_graph.add_edge(idx, neighbour_idx, weight=dist)
         return self.road_graph
 
     def make_vertices(self, min_length: float, min_width: float, visualise: bool = False) -> None:

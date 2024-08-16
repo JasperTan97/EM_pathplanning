@@ -3,12 +3,12 @@ from shapely.ops import unary_union
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon as MplPolygon
 import numpy as np
-from typing import Tuple
+from typing import Tuple, List, Optional
 
 class BaseVehicle():
     def __init__(
             self, 
-            start_position: list,
+            start_position: List,
             min_wheel_acceleration: float,
             max_wheel_acceleration: float,
             min_wheel_speed: float,
@@ -61,8 +61,14 @@ class BaseVehicle():
         return self._x, self._y, self._theta, self._linear_velocity, self._angular_velocity
 
 class EdyMobile(BaseVehicle):
+    """
+    To use, initialise the start posiiton
+    """
     """EdyMobile datasheet"""
-    def __init__(self, start_position: list):
+    def __init__(self, start_position: Optional[Tuple[float, float, float]] = [0,0,0]):
+        """
+        start_position: x, y, theta values of the vehicle
+        """
         # Define the 'centre' of the EdyMobile as centre of the wheel axis
         self._length_of_wheel_axis = 0.18
         self._length_to_back_rect = 0.03
@@ -87,8 +93,10 @@ class EdyMobile(BaseVehicle):
         # construct EdyMobile shape
         self.construct_vehicle()
 
-    def construct_vehicle(self):
+    def construct_vehicle(self, state: Optional[Tuple[float, float, float]] = None):
         """Reconstructs the shapely object representing the vehicle"""
+        if state is not None:
+            self._x, self._y, self._theta = state
         radius = self._length_of_wheel_axis / 2
         frontct = self._length_to_front_rect * np.cos(self._theta)
         frontst = self._length_to_front_rect * np.sin(self._theta)
