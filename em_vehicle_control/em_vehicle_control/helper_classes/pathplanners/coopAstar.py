@@ -1,7 +1,7 @@
 from typing import List, Optional, Union, Tuple
 import networkx as nx
 import numpy as np
-import heapq
+import copy
 from shapely import buffer
 from shapely.geometry import Polygon, Point, MultiPolygon
 
@@ -140,6 +140,9 @@ class CAstarNode(AstarNode):
 
     def __repr__(self) -> str:
         return super().__repr__()
+    
+    def __repr__(self) -> str:
+        return f"Node {self.index} with parent {self.parent}, duration {self.duration:.2f}, timestamp {self.timestamp:.2f}, and f {self.f:.2f}"
 
 
 class CAstar(Astar):
@@ -254,6 +257,7 @@ class CAstar(Astar):
         open_set.append(start_node)
         came_from[start] = start_node
         while open_set:
+            # print(open_set)
             current_node = min(open_set)
             open_set.remove(current_node) # always remove first
             if (current_node.index, current_node.timestamp + current_node.duration) in closed_set:
@@ -293,14 +297,13 @@ class CAstar(Astar):
                 )
                 open_set.append(new_node)
                 came_from[neighbour_index] = current_node
-                
-            # adding the wait node
-            new_node = current_node
+            new_node = copy.deepcopy(current_node)
             new_node.timestamp = current_node.timestamp + self.wait_time
             new_node.g = current_node.g + self.wait_time * self.average_velocity
             open_set.append(new_node)
 
         if goal_reached:
+            # print(came_from)
             rev_path = [(current_node.index, current_node.timestamp, current_node.timestamp+current_node.duration)]
             parent = came_from[current_node.index]
             while parent.index != start:
@@ -310,8 +313,6 @@ class CAstar(Astar):
             rev_path.append((start,-1,0))
             path = list(reversed(rev_path))
             for i in range(len(rev_path)-1):
-                # path[i] is the parent, path[i+1] is the child
-                # unsafe time should be parent.timestamp to child.timestamp
                 swept_poly = self.create_swept_polygon(path[i][0], path[i+1][0], vehicle)
                 self.reservation_table.append((swept_poly, path[i][1], path[i][2]))
             return path
