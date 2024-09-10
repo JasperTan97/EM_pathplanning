@@ -7,7 +7,7 @@ from shapely import within
 
 goal = (6.2, 8.5)
 goal_radius = 0.2
-vehicle = EdyMobile(start_position=[3.2, 2, (np.pi* 2) * (0)])
+# vehicle = EdyMobile(start_position=[3.2, 2, (np.pi* 2) * (0)])
 test_roads = [
     RoadSegment((2.87,1.67), (3.52,13.67)),
     RoadSegment((6.9,0.3), (7.55, 15.67)),
@@ -17,15 +17,15 @@ test_roads = [
     # RoadSegment((0,0), (10,10))
 ]
 test_map = RoadMap(test_roads)
-local_map = test_map
-other_vehicles = []
 test_graph = RoadGraph(test_map)
-test_graph.make_vertices(0.4, 0.3, False)
+test_graph.make_vertices(0.4, 0.3, True)
 
 test_global_plannar = GlobalPlannar(test_graph)
 # test_global_plannar.dijkstra((2,2), (7.2,15),test_map)
 # test_global_plannar.Astar((2,2), (7.2,15), test_map)
-test_global_plannar.CAstar([(2,2),(6,8.6),(2,4),(7.2,15)], [(7.2,15),(2,4),(6,8.6),(2,2)], [EdyMobile(),EdyMobile(),EdyMobile(),EdyMobile()], test_map)
+test_global_plannar.CAstar([(3.1, 1.85)], [(3.3, 3.06)], [EdyMobile(),EdyMobile(),EdyMobile(),EdyMobile()], None)
+test_global_plannar.generate_paths()
+print(test_global_plannar.spacetime_paths)
 
 
 # a = within(vehicle._vehicle_model, local_map.map)
