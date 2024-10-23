@@ -1,15 +1,18 @@
 from scipy.spatial.transform import Rotation as R
 import networkx as nx
 import numpy as np
+import time
 
-from em_vehicle_control.helper_classes.map import RoadSegment, RoadMap, RoadGraph
-from em_vehicle_control.helper_classes.global_plannar import GlobalPlannar
-from em_vehicle_control.helper_classes.vehicles import EdyMobile
+from em_vehicle_control.helper_classes.map import RoadSegment, RoadMap, RoadGraph, RoadTrack
+from em_vehicle_control.helper_classes.path_planner import PathPlanner, PathPointDatum
+from em_vehicle_control.helper_classes.vehicles import EdyMobile, Edison
 
 import rclpy
 from rclpy.node import Node
 from tf2_ros import Buffer, TransformListener
 from geometry_msgs.msg import TransformStamped, PoseStamped
+from em_vehicle_control_msgs.msg import Pose2D, Path2D
+from std_msgs.msg import Header
 from nav_msgs.msg import Path
 import tf2_ros
 from rclpy.duration import Duration
@@ -38,17 +41,19 @@ class Planner(Node):
             # RoadSegment((0,0), (10,10))
         ]
         test_map = RoadMap(test_roads)
-        test_graph = RoadGraph(test_map)
-        test_graph.make_vertices(0.4, 0.3, True)
-        self.test_global_plannar = GlobalPlannar(test_graph)
-        # test_global_plannar.CAstar([(3.1, 1.85)], [(3.3, 3.06)], [EdyMobile()], None)
+        test_graph = RoadTrack(test_map)
+        self.path_planner = PathPlanner(test_map, test_graph, 1)
         self.robot_names = ["robot_0"]
-        self.goals = [(7.23, 14.9)]
+        self.goals = [(3,4.32, 0)]#[(7.23, 14.9)]
+        self.vehicles = [EdyMobile()]
         self.timer = self.create_timer(timer_period, self.plan_callback)
         self.pubbers = []
+        self.rviz_pubbers = []
         for robot_name in self.robot_names:
-            pub = self.create_publisher(Path, f"{robot_name}/path", 1)
+            pub = self.create_publisher(Path2D, f"{robot_name}/path", 1)
             self.pubbers.append(pub)
+            pub = self.create_publisher(Path, f"{robot_name}/path_for_rviz", 1)
+            self.rviz_pubbers.append(pub)
 
     def plan_callback(self):
         current_poses = []
@@ -80,37 +85,43 @@ class Planner(Node):
                 self.get_logger().error(f"Transform exception: {e}")
         if current_poses == []:
             return
-        current_pos = [(x[0], x[1]) for x in current_poses]
-        self.test_global_plannar.CAstar(current_pos, self.goals, [EdyMobile()])
+        # current_pos = [(x[0], x[1]) for x in current_poses]
+        # print(f"Planning start")
+        time_a = time.time()
+        paths = self.path_planner.plan(current_poses, self.goals, self.vehicles)
+        # print(f"Planning ends in {time.time() - time_a} seconds")
         current_time = rclpy.time.Time()
-        paths = self.test_global_plannar.generate_paths()
-        # paths = [[
-        #     ((3.1,2.0), 3*np.pi/4, 0.0),
-        #     ((2.1,3.0), np.pi/4, 0.0),
-        #     ((3.1,4.0), np.pi/2, 0.0),
-        #     ((3.1,5.0), 0.0, 0.0),
-        #     ((4.0,5.0), 0.0, 0.0)
-        #     ]]
-        for path, pub in zip(paths, self.pubbers):
+       
+        for path, pub, rviz_pub in zip(paths, self.pubbers, self.rviz_pubbers):
+            if path is None:
+                continue
+            path_2D_msg = Path2D()
+            path_2D_msg.header.frame_id = "world"
             path_msg = Path()
             path_msg.header.frame_id = "world"
             for node in path:
-                posestamped_msg = PoseStamped()
-                posestamped_msg.pose.position.x = node[0][0]
-                posestamped_msg.pose.position.y = node[0][1]
-                posestamped_msg.pose.position.z = 0.0
-                r = R.from_euler("z", node[1], degrees=False)
-                (
-                    posestamped_msg.pose.orientation.x,
-                    posestamped_msg.pose.orientation.y,
-                    posestamped_msg.pose.orientation.z,
-                    posestamped_msg.pose.orientation.w,
-                ) = r.as_quat()
-                time_in_nanoseconds = rclpy.time.Duration(nanoseconds=int(node[2] * 1e9))
-                posestamped_msg.header.stamp = (time_in_nanoseconds + current_time).to_msg()
-                posestamped_msg.header.frame_id = "world"
-                path_msg.poses.append(posestamped_msg)
-            pub.publish(path_msg)
+                pose_2D_msg = Pose2D()
+                pose_2D_msg.x = float(node.x)
+                pose_2D_msg.y = float(node.y)
+                if node.direction == 1:
+                    pose_2D_msg.direction_flag = Pose2D.FORWARD
+                else:
+                    pose_2D_msg.direction_flag = Pose2D.BACKWARD
+                time_in_nanoseconds = rclpy.time.Duration(nanoseconds=int(node.time * 1e9))
+                pose_2D_msg.header.stamp = (time_in_nanoseconds + current_time).to_msg()
+                pose_2D_msg.header.frame_id = "world"
+                path_2D_msg.poses.append(pose_2D_msg)
+                pose_msg = PoseStamped()
+                pose_msg.pose.position.x = float(node.x)
+                pose_msg.pose.position.y = float(node.y)
+                pose_msg.pose.position.z = 0.0
+                pose_msg.pose.orientation.w = 1.0
+                pose_msg.pose.orientation.x = 0.0
+                pose_msg.pose.orientation.y = 0.0
+                pose_msg.pose.orientation.z = 0.0
+                path_msg.poses.append(pose_msg)
+            pub.publish(path_2D_msg)
+            rviz_pub.publish(path_msg)
 
 
 def main(args=None):

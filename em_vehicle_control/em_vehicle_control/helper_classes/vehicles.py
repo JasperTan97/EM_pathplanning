@@ -79,6 +79,7 @@ class EdyMobile(BaseVehicle):
         self._min_wheel_speed = -0.5 # rad/s
         self._max_wheel_speed = 0.5
         self._wheel_radius = 0.08
+        self.turning_radius = self._length_of_wheel_axis/2
 
         super().__init__(
             start_position, 
@@ -113,6 +114,42 @@ class EdyMobile(BaseVehicle):
             (self._x - backct + radst, self._y - backst - radct)
         ])
         self._vehicle_model = unary_union([rectangle, circle])
+
+    def step(self, dt: float, left_acc: float, right_acc: float) -> None:
+        super().step(dt, left_acc, right_acc)
+        self.construct_vehicle()
+
+    
+class Edison(BaseVehicle):
+    def __init__(self, start_position: Optional[Tuple[float, float, float]] = [0,0,0]):
+        self._length_of_wheel_axis = 0.23
+        self.body_radius = 0.245/2
+        # Define wheel properties
+        self._min_wheel_acceleration = -0.2 # rad/s/s
+        self._max_wheel_acceleration = 0.2
+        self._min_wheel_speed = -0.5 # rad/s
+        self._max_wheel_speed = 0.5
+        self._wheel_radius = 0.08
+        self.turning_radius = self._length_of_wheel_axis/2
+
+        super().__init__(
+            start_position, 
+            self._min_wheel_acceleration, 
+            self._max_wheel_acceleration,
+            self._min_wheel_speed,
+            self._max_wheel_speed,
+            self._wheel_radius,
+            self._length_of_wheel_axis
+        )
+        self.construct_vehicle()
+
+    def construct_vehicle(self, state: Optional[Tuple[float, float, float]] = None):
+        """Reconstructs the shapely object representing the vehicle"""
+        if state is not None:
+            self._x, self._y, self._theta = state
+        center = Point(self._x, self._y)
+        circle = center.buffer(self.body_radius, resolution=100)
+        self._vehicle_model = circle
 
     def step(self, dt: float, left_acc: float, right_acc: float) -> None:
         super().step(dt, left_acc, right_acc)

@@ -30,8 +30,8 @@ class RoadMapAnimator():
         for hole_polygon in interior_polygons:
             ax.add_patch(hole_polygon)
 
-        pos = nx.get_node_attributes(self.road_graph.road_graph, 'pos')
-        nx.draw(self.road_graph.road_graph, pos, node_size=5, node_color="skyblue", font_weight="bold", edge_color="gray", ax=ax)
+        pos = nx.get_node_attributes(self.road_graph.full_graph, 'pos')
+        nx.draw(self.road_graph.full_graph, pos, node_size=5, node_color="skyblue", font_weight="bold", edge_color="gray", ax=ax)
         
         # loop through all paths, and update paths using start times
         frames = []
@@ -46,9 +46,9 @@ class RoadMapAnimator():
             for i, plotted_path in enumerate(plotted_paths):
                 path_edges = list(zip(plotted_path, plotted_path[1:]))
                 if len(plotted_path) > 1:
-                    frame.append(nx.draw_networkx_nodes(self.road_graph.road_graph, pos, nodelist=plotted_path, node_size=7, node_color=self.list_of_colours[i], ax=ax))
+                    frame.append(nx.draw_networkx_nodes(self.road_graph.full_graph, pos, nodelist=plotted_path, node_size=7, node_color=self.list_of_colours[i], ax=ax))
                 if len(path_edges) > 1:
-                    frame.append(nx.draw_networkx_edges(self.road_graph.road_graph, pos, edgelist=path_edges, edge_color=self.list_of_colours[i], ax=ax))
+                    frame.append(nx.draw_networkx_edges(self.road_graph.full_graph, pos, edgelist=path_edges, edge_color=self.list_of_colours[i], ax=ax))
             frames.append(frame)
         
         ani = ArtistAnimation(fig, frames, interval=300, blit=True)

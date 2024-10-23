@@ -44,7 +44,7 @@ class Astar:
         road_graph: graph of map
         """
         self.road_graph = road_graph
-        self.road_graph_details = nx.get_node_attributes(self.road_graph.road_graph, "pos")
+        self.road_graph_details = nx.get_node_attributes(self.road_graph.full_graph, "pos")
 
     def get_heuristic(self, state: int, end: int) -> float:
         """
@@ -79,11 +79,11 @@ class Astar:
             if current_index == end:
                 goal_reached = True
                 break
-            neighbour_indices = self.road_graph.road_graph.neighbors(current_index)
+            neighbour_indices = self.road_graph.full_graph.neighbors(current_index)
             for neighbour_index in neighbour_indices:
                 if neighbour_index in closed_set:
                     continue
-                added_tentative_cost = self.road_graph.road_graph.get_edge_data(
+                added_tentative_cost = self.road_graph.full_graph.get_edge_data(
                     current_index, neighbour_index
                 )["weight"]
                 if neighbour_index not in came_from:
@@ -158,7 +158,7 @@ class CAstar(Astar):
         end_states: List[int],
         vehicles: List[Union[EdyMobile]],
         average_velocity: float,
-        size_buffer: float = 0.05,
+        size_buffer: float = 0.0,
         wait_time: float = 0.5,
         time_buffer: float = 0.3
     ) -> None:
@@ -178,6 +178,7 @@ class CAstar(Astar):
             print(
                 "Error: The lists of start and end states and times should have the same number of entries."
             )
+            print(start_states, end_states, vehicles)
         self.start_states = start_states
         self.end_states = end_states
         self.vehicles = vehicles
@@ -186,8 +187,6 @@ class CAstar(Astar):
         self.wait_time = wait_time
         self.time_buffer = time_buffer
 
-        # Reservation table exists as a hash mapping list of graph nodes to the time in which it is visited
-        self.reservation_table: dict[int : List[tuple(float, float)]] = {}
         # Reservation table exists as a list of obstacles with start and end time where that region is "unsafe"
         self.reservation_table: List[Tuple[Polygon, float, float]] = []
 
@@ -209,9 +208,19 @@ class CAstar(Astar):
                 if travel_polygon.intersects(obstacle):
                     return False
         return True
-
     
-    def create_swept_polygon(self, parent: int, child: int, vehicle: Union[EdyMobile]):
+    def is_not_colliding_with_map(self, parent_node: int, child_node: int, vehicle: Union[EdyMobile, Edison]) -> bool:
+        """
+        parent_node: index of parent node
+        child_node: index of child node
+        vehicle: vehicle object travelling along path
+
+        return: true if no collisions were detected
+        """
+        travel_polygon = self.create_swept_polygon(parent_node, child_node, vehicle)
+        return travel_polygon.within(self.road_graph.road_map.map)
+    
+    def create_swept_polygon(self, parent: int, child: int, vehicle: Union[EdyMobile, Edison]):
         """
         parent: index of parent node (start node)
         child: index of child node (end node)
@@ -234,16 +243,31 @@ class CAstar(Astar):
         return buffer(MultiPolygon([start_polygon, end_polygon]).convex_hull, self.size_buffer)
         
     
-    def multi_plan(self):
+    def multi_plan(self, previous_paths=None):
         """
-        Start the multi agent planning
+        Start the multi-agent planning.
+        If previous_paths is None, it will plan without biasing for any previous path.
         """
         paths = []
-        for start, end, vehicle in zip(self.start_states, self.end_states, self.vehicles):
-            paths.append(self.plan(start, end, vehicle))
+        if previous_paths is None:
+            previous_paths = [None] * len(self.start_states)  # Ensure correct length
+        
+        for start, end, vehicle, previous_path in zip(self.start_states, self.end_states, self.vehicles, previous_paths):
+            paths.append(self.plan(start, end, vehicle, previous_path))
+        
         return paths
+    
+    def bias_to_prev_path(self, node, previous_path):
+        bias_mult = 0.5 # scales from the cost of 1 to bias_mult (larger is more effective, ranges from 0 to 1)
+        if previous_path is None:
+            return 1  # No scaling
+        try:
+            index = previous_path.index(node)
+            return 1 - (bias_mult / (index + 1))  # scales from 
+        except ValueError:
+            return 1  # No scaling for nodes not in the previous path
 
-    def plan(self, start, end, vehicle):
+    def plan(self, start, end, vehicle, previous_path=None):
         """
         start: index of starting node
         end: index of ending node
@@ -257,7 +281,6 @@ class CAstar(Astar):
         open_set.append(start_node)
         came_from[start] = start_node
         while open_set:
-            # print(open_set)
             current_node = min(open_set)
             open_set.remove(current_node) # always remove first
             if (current_node.index, current_node.timestamp + current_node.duration) in closed_set:
@@ -266,11 +289,11 @@ class CAstar(Astar):
             if current_node.index == end:
                 goal_reached = True
                 break
-            neighbour_indices = self.road_graph.road_graph.neighbors(current_node.index)
+            neighbour_indices = self.road_graph.full_graph.neighbors(current_node.index)
             for neighbour_index in neighbour_indices:
-                added_tentative_cost = self.road_graph.road_graph.get_edge_data(
+                added_tentative_cost = self.road_graph.full_graph.get_edge_data(
                     current_node.index, neighbour_index
-                )["weight"]
+                )["weight"] * self.bias_to_prev_path(neighbour_index, previous_path)
                 travel_duration = added_tentative_cost / self.average_velocity
                 travel_start_time = current_node.timestamp
                 travel_end_time = travel_duration + travel_start_time
@@ -282,6 +305,8 @@ class CAstar(Astar):
                     old_cost = came_from[neighbour_index].g
                 if added_tentative_cost + current_node.g > old_cost:
                     continue
+                # if not self.is_not_colliding_with_map(current_node.index, neighbour_index, vehicle):
+                #     continue
                 if not self.is_node_free(
                     current_node.index, neighbour_index, travel_start_time, travel_end_time, vehicle
                 ):
@@ -303,7 +328,6 @@ class CAstar(Astar):
             open_set.append(new_node)
 
         if goal_reached:
-            # print(came_from)
             rev_path = [(current_node.index, current_node.timestamp, current_node.timestamp+current_node.duration)]
             parent = came_from[current_node.index]
             while parent.index != start:
@@ -318,4 +342,5 @@ class CAstar(Astar):
             return path
         else:
             print(f"Path searching from {start} to {end} nodes failed")
+            # this will never happen due to infinite time dimension
             return None
